@@ -22,9 +22,15 @@ const HashedFile = struct {
     }
 };
 
+pub const WhatToDoWithExecutableBit = enum {
+    ignore_executable_bit,
+    include_executable_bit,
+};
+
 pub fn computePackageHash(
     thread_pool: *ThreadPool,
     pkg_dir: fs.IterableDir,
+    executable_bit: WhatToDoWithExecutableBit,
 ) ![Hash.digest_length]u8 {
     const gpa = thread_pool.allocator;
 
@@ -48,11 +54,14 @@ pub fn computePackageHash(
         defer wait_group.wait();
 
         while (try walker.next()) |entry| {
-            switch (entry.kind) {
-                .directory => continue,
-                .file => {},
-                else => return error.IllegalFileTypeInPackage,
-            }
+            //if (try @import("root").entry_should_be_skipped(entry)) {
+            //    if (entry.kind != .directory and entry.kind != .file) {
+            //        std.log.warn("skipping {}: {s}", .{ entry.kind, entry.path });
+            //    }
+
+            //    continue;
+            //}
+
             const hashed_file = try arena.create(HashedFile);
             const fs_path = try arena.dupe(u8, entry.path);
             hashed_file.* = .{
@@ -62,7 +71,7 @@ pub fn computePackageHash(
                 .failure = undefined, // to be populated by the worker
             };
             wait_group.start();
-            try thread_pool.spawn(workerHashFile, .{ pkg_dir.dir, hashed_file, &wait_group });
+            try thread_pool.spawn(workerHashFile, .{ pkg_dir.dir, hashed_file, &wait_group, executable_bit });
 
             try all_files.append(hashed_file);
         }
@@ -80,16 +89,14 @@ pub fn computePackageHash(
         hasher.update(&hashed_file.hash);
     }
     if (any_failures) return error.PackageHashUnavailable;
-    return hasher.finalResult();
+    const final = hasher.finalResult();
+    return final;
 }
 
 /// Make a file system path identical independently of operating system path inconsistencies.
 /// This converts backslashes into forward slashes.
 fn normalizePath(arena: Allocator, fs_path: []const u8) ![]const u8 {
     const canonical_sep = '/';
-
-    if (fs.path.sep == canonical_sep)
-        return fs_path;
 
     const normalized = try arena.dupe(u8, fs_path);
     for (normalized) |*byte| {
@@ -101,18 +108,18 @@ fn normalizePath(arena: Allocator, fs_path: []const u8) ![]const u8 {
     return normalized;
 }
 
-fn workerHashFile(dir: fs.Dir, hashed_file: *HashedFile, wg: *WaitGroup) void {
+fn workerHashFile(dir: fs.Dir, hashed_file: *HashedFile, wg: *WaitGroup, executable_bit: WhatToDoWithExecutableBit) void {
     defer wg.finish();
-    hashed_file.failure = hashFileFallible(dir, hashed_file);
+    hashed_file.failure = hashFileFallible(dir, hashed_file, executable_bit);
 }
 
-fn hashFileFallible(dir: fs.Dir, hashed_file: *HashedFile) HashedFile.Error!void {
+fn hashFileFallible(dir: fs.Dir, hashed_file: *HashedFile, executable_bit: WhatToDoWithExecutableBit) HashedFile.Error!void {
     var buf: [8000]u8 = undefined;
     var file = try dir.openFile(hashed_file.fs_path, .{});
     defer file.close();
     var hasher = Hash.init(.{});
     hasher.update(hashed_file.normalized_path);
-    hasher.update(&.{ 0, @intFromBool(try isExecutable(file)) });
+    hasher.update(&.{ 0, @intFromBool(try isExecutable(file, executable_bit)) });
     while (true) {
         const bytes_read = try file.read(&buf);
         if (bytes_read == 0) break;
@@ -121,7 +128,12 @@ fn hashFileFallible(dir: fs.Dir, hashed_file: *HashedFile) HashedFile.Error!void
     hasher.final(&hashed_file.hash);
 }
 
-fn isExecutable(file: fs.File) !bool {
+pub fn isExecutable(file: fs.File, executable_bit: WhatToDoWithExecutableBit) !bool {
+    switch (executable_bit) {
+        .ignore_executable_bit => return false,
+        .include_executable_bit => {},
+    }
+
     if (builtin.os.tag == .windows) {
         // TODO check the ACL on Windows.
         // Until this is implemented, this could be a false negative on

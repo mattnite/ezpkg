@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
 
     const parser_toolkit_dep = b.dependency("parser-toolkit", .{});
     const known_folders_dep = b.dependency("known-folders", .{});
+    const libz_dep = b.dependency("libz", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const exe = b.addExecutable(.{
         .name = "ezpkg",
@@ -28,6 +32,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.addModule("parser-toolkit", parser_toolkit_dep.module("parser-toolkit"));
     exe.addModule("known-folders", known_folders_dep.module("known-folders"));
+    exe.linkLibrary(libz_dep.artifact("z"));
 
     if (target.isDarwin())
         exe.linkFramework("CoreServices");

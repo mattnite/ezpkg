@@ -78,7 +78,7 @@ fn event_stream_cb_impl(
         return;
 
     // this set will deduplicate paths
-    var package_set = std.AutoArrayHashMap(PackageId, void).init(state.allocator);
+    var package_set = std.AutoArrayHashMap(PackageId, void).init(state.gpa);
     defer package_set.deinit();
 
     const paths: [*]const [*:0]const u8 = @ptrCast(@alignCast(event_paths.?));

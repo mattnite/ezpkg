@@ -24,6 +24,10 @@ pub const Header = extern struct {
     prefix: [155]u8,
     pad: [12]u8,
 
+    comptime {
+        std.debug.assert(@sizeOf(Header) == 512);
+    }
+
     const Self = @This();
 
     const FileType = enum(u8) {
@@ -40,14 +44,38 @@ pub const Header = extern struct {
         _,
     };
 
-    fn init() Self {
+    const Options = struct {
+        typeflag: FileType,
+        path: []const u8,
+        size: u64,
+        mode: std.fs.File.Mode,
+    };
+
+    pub fn to_bytes(header: *const Header) *const [512]u8 {
+        return @ptrCast(header);
+    }
+
+    pub fn init(opts: Options) !Self {
         var ret = std.mem.zeroes(Self);
         ret.magic = [_:0]u8{ 'u', 's', 't', 'a', 'r' };
         ret.version = [_:0]u8{ '0', '0' };
+        ret.typeflag = opts.typeflag;
+
+        try ret.setPath(opts.path);
+        try ret.setSize(opts.size);
+        try ret.setMtime(0);
+        try ret.setMode(opts.typeflag, opts.mode);
+        try ret.setUid(0);
+        try ret.setGid(0);
+
+        std.mem.copy(u8, &ret.uname, "root");
+        std.mem.copy(u8, &ret.gname, "root");
+
+        try ret.updateChecksum();
         return ret;
     }
 
-    fn setPath(self: *Self, path: []const u8) !void {
+    pub fn setPath(self: *Self, path: []const u8) !void {
         if (path.len > 100) {
             var i: usize = 0;
             while (i < path.len and path.len - i > 100) {
@@ -61,20 +89,29 @@ pub const Header = extern struct {
         }
     }
 
-    fn setSize(self: *Self, size: u64) !void {
+    pub fn setSize(self: *Self, size: u64) !void {
         _ = try std.fmt.bufPrint(&self.size, "{o:0>11}", .{size});
     }
 
-    fn setMtime(self: *Self, mtime: u32) !void {
+    pub fn get_size(header: Header) !u64 {
+        return std.fmt.parseUnsigned(u64, &header.size, 8);
+    }
+
+    pub fn setMtime(self: *Self, mtime: u32) !void {
         _ = try std.fmt.bufPrint(&self.mtime, "{o:0>11}", .{mtime});
     }
 
-    fn setMode(self: *Self, filetype: FileType, perm: u9) !void {
+    pub fn setMode(self: *Self, filetype: FileType, perm: std.fs.File.Mode) !void {
         switch (filetype) {
-            .regular => _ = try std.fmt.bufPrint(&self.mode, "0100{o:0>3}", .{perm}),
-            .directory => _ = try std.fmt.bufPrint(&self.mode, "0040{o:0>3}", .{perm}),
+            .regular => _ = try std.fmt.bufPrint(&self.mode, "0{o:0>6}", .{perm}),
+            .directory => _ = try std.fmt.bufPrint(&self.mode, "0{o:0>6}", .{perm}),
             else => return error.Unsupported,
         }
+    }
+
+    pub fn get_mode(header: Header) !std.fs.File.Mode {
+        std.log.info("mode str: {s}", .{&header.mode});
+        return std.fmt.parseUnsigned(std.fs.File.Mode, &header.mode, 8);
     }
 
     fn setUid(self: *Self, uid: u32) !void {
@@ -85,10 +122,10 @@ pub const Header = extern struct {
         _ = try std.fmt.bufPrint(&self.gid, "{o:0>7}", .{gid});
     }
 
-    fn updateChecksum(self: *Self) !void {
+    pub fn updateChecksum(self: *Self) !void {
         const offset = @offsetOf(Self, "checksum");
         var checksum: usize = 0;
-        for (std.mem.asBytes(self)) |val, i| {
+        for (std.mem.asBytes(self), 0..) |val, i| {
             checksum += if (i >= offset and i < offset + @sizeOf(@TypeOf(self.checksum)))
                 ' '
             else
@@ -98,7 +135,7 @@ pub const Header = extern struct {
         _ = try std.fmt.bufPrint(&self.checksum, "{o:0>7}", .{checksum});
     }
 
-    fn fromStat(stat: std.fs.File.Stat, path: []const u8) !Header {
+    pub fn fromStat(stat: std.fs.File.Stat, path: []const u8) !Header {
         if (std.mem.indexOf(u8, path, "\\") != null) return error.NeedPosixPath;
         if (std.fs.path.isAbsolute(path)) return error.NeedRelPath;
 
@@ -111,8 +148,8 @@ pub const Header = extern struct {
 
         try ret.setPath(path);
         try ret.setSize(stat.size);
-        try ret.setMtime(@truncate(u32, @bitCast(u128, @divTrunc(stat.mtime, std.time.ns_per_s))));
-        try ret.setMode(ret.typeflag, @truncate(u9, stat.mode));
+        try ret.setMtime(@as(u32, @truncate(@as(u128, @bitCast(@divTrunc(stat.mtime, std.time.ns_per_s))))));
+        try ret.setMode(ret.typeflag, @as(u9, @truncate(stat.mode)));
 
         try ret.setUid(0);
         try ret.setGid(0);
@@ -314,7 +351,7 @@ pub fn Builder(comptime Writer: type) type {
                 const mod = counter.bytes_written % 512;
                 break :blk if (mod > 0) 512 - mod else 0;
             };
-            try self.writer.writeByteNTimes(0, @intCast(usize, padding));
+            try self.writer.writeByteNTimes(0, @as(usize, @intCast(padding)));
         }
 
         /// add slice of bytes as file `path`
