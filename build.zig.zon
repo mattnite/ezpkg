@@ -2,10 +2,6 @@
     .name = "ezpkg",
     .version = "0.0.0",
     .dependencies = .{
-        .@"parser-toolkit" = .{
-            .url = "https://github.com/MasterQ32/parser-toolkit/archive/6238b7c6893582fb56f39676a090b1af1226fe1a.tar.gz",
-            .hash = "1220cf55c10add71a9cd2591dbe118ffa9a9198e21069e440fae1f6e3eef6f274733",
-        },
         .@"known-folders" = .{
             .url = "https://github.com/ziglibs/known-folders/archive/fa75e1bc672952efa0cf06160bbd942b47f6d59b.tar.gz",
             .hash = "122048992ca58a78318b6eba4f65c692564be5af3b30fbef50cd4abeda981b2e7fa5",
@@ -13,6 +9,10 @@
         .libz = .{
             .url = "https://github.com/andrewrk/libz/archive/8bf2a1c61b87773131bee2086737b5f02b7c0888.tar.gz",
             .hash = "12209e851f7e2c6ba2f01de3e11b1771f03e49666065320abd8414aac152bfa75fae",
+        },
+        .eggzon = .{
+            .url = "https://github.com/ziglibs/eggzon/archive/be722cad24612533ef14d9e091d1c7983e887c47.tar.gz",
+            .hash = "12204acd9c74c9e20261f720560a90b46f5b18b353a96048b9ad5b8835ea9d0ce6af",
         },
     },
 }

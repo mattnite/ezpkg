@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const parser_toolkit_dep = b.dependency("parser-toolkit", .{});
+    const eggzon_dep = b.dependency("eggzon", .{});
     const known_folders_dep = b.dependency("known-folders", .{});
     const libz_dep = b.dependency("libz", .{
         .target = target,
@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("parser-toolkit", parser_toolkit_dep.module("parser-toolkit"));
+    exe.addModule("eggzon", eggzon_dep.module("eggzon"));
     exe.addModule("known-folders", known_folders_dep.module("known-folders"));
     exe.linkLibrary(libz_dep.artifact("z"));
 
@@ -72,7 +72,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    unit_tests.addModule("parser-toolkit", parser_toolkit_dep.module("parser-toolkit"));
+    unit_tests.addModule("eggzon", eggzon_dep.module("eggzon"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
