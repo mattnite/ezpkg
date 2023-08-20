@@ -1,0 +1,17 @@
+name: macos
+on:
+  push:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-11, macos-12, macos-13]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: goto-bus-stop/setup-zig@v1.3.0
+        with:
+          version: 0.11.0
+      - run: zig build

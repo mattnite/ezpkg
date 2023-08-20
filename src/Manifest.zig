@@ -7,7 +7,7 @@ const Manifest = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const State = @import("State.zig");
-const zon = @import("eggzon.zig");
+const zon = @import("eggzon");
 
 const log = std.log.scoped(.manifest);
 

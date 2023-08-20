@@ -316,7 +316,3 @@ fn update_packages_on_change(state: *State) !void {
         else => @compileError("unsupported OS"),
     }
 }
-
-test "all" {
-    _ = @import("eggzon.zig");
-}
