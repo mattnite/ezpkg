@@ -77,9 +77,10 @@ pub const Header = extern struct {
 
     pub fn setPath(self: *Self, path: []const u8) !void {
         if (path.len > 100) {
-            var i: usize = 0;
-            while (i < path.len and path.len - i > 100) {
-                while (path[i] != '/') : (i += 1) {}
+            var i: usize = 100;
+            while (i > 0) : (i -= 1) {
+                if (path[i] == '/' and i < 100)
+                    break;
             }
 
             _ = try std.fmt.bufPrint(&self.prefix, "{s}", .{path[0..i]});

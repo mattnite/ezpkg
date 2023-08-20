@@ -16,8 +16,7 @@ const tar = @import("tar.zig");
 const zlib = @import("zlib.zig");
 
 pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, first_trace_addr: ?usize) noreturn {
-    global_state.dump();
-    //cleanup_state(0);
+    cleanup_state(0);
     std.debug.panicImpl(trace, first_trace_addr, msg);
 }
 
@@ -37,7 +36,10 @@ fn fetch_dependencies_and_apply_redirects(allocator: Allocator, commands: []cons
         try packages.append(package_id);
     }
 
-    try handle_package_change(&global_state, packages.items);
+    // TODO: determine why the zig compiler fails to connect when this is
+    // uncommented. For now users need to make one edit in a redirected package
+    // for the redirections to take place
+    //try handle_package_change(&global_state, packages.items);
 }
 
 const RankStep = struct {
@@ -129,14 +131,6 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
-    var server = std.http.Server.init(gpa.allocator(), .{});
-    defer server.deinit();
-
-    const address = try std.net.Address.parseIp("127.0.0.1", 0);
-    try server.listen(address);
-    global_state.port = server.socket.listen_address.in.getPort();
-    std.log.info("serving on localhost:{}", .{global_state.port});
-
     const cleanup_action = std.os.Sigaction{
         .handler = .{
             .handler = cleanup_state,
@@ -152,6 +146,14 @@ pub fn main() !void {
         defer zon_file.close();
         try global_state.write_zon(.root, zon_file.writer(), .{});
     }
+
+    var server = std.http.Server.init(gpa.allocator(), .{});
+    defer server.deinit();
+
+    const address = try std.net.Address.parseIp("127.0.0.1", 0);
+    try server.listen(address);
+    global_state.port = server.socket.listen_address.in.getPort();
+    std.log.info("serving on localhost:{}", .{global_state.port});
 
     const server_thread = try std.Thread.spawn(.{}, serve_packages, .{ &server, &global_state });
     defer server_thread.join();
@@ -169,6 +171,7 @@ fn cleanup_state(_: c_int) callconv(.C) void {
 fn serve_packages(server: *std.http.Server, state: *State) !void {
     const max_header_size = 8096;
     const allocator = state.gpa;
+    std.log.info("accepting connections", .{});
     while (true) {
         const res = try allocator.create(std.http.Server.Response);
         res.* = try server.accept(.{
@@ -263,6 +266,7 @@ pub fn handle_package_change(state: *State, package_ids: []const PackageId) !voi
     defer zon_file.close();
 
     try state.write_zon(.root, zon_file.writer(), .{});
+    std.log.info("DONE UPDATE", .{});
 }
 
 fn package_id_rank_less_than(state: State, lhs: PackageId, rhs: PackageId) bool {

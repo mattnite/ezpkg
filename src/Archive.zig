@@ -267,6 +267,10 @@ pub fn hash(
     executable_bit: WhatToDoWithExecutableBit,
 ) ![Hash.digest_length]u8 {
     var timer = try std.time.Timer.start();
+    defer {
+        const timer_result = timer.read();
+        log.info("hash took {} nanoseconds", .{timer_result});
+    }
 
     var paths = std.ArrayList([]const u8).init(allocator);
     defer paths.deinit();
@@ -290,9 +294,6 @@ pub fn hash(
     var hasher = Hash.init(.{});
     for (hashes.items) |file_hash|
         hasher.update(&file_hash);
-
-    const timer_result = timer.read();
-    log.info("hash took {} nanoseconds", .{timer_result});
 
     return hasher.finalResult();
 }
