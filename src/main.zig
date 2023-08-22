@@ -22,19 +22,44 @@ pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, first_trace_addr:
 
 fn fetch_dependencies_and_apply_redirects(allocator: Allocator, commands: []const RedirectCommand) !void {
     global_state = try State.init(allocator);
+    errdefer global_state.deinit();
 
     try global_state.read_in_dependencies_from_project(.root, fs.cwd());
     if (global_state.packages.count() == 0)
         return;
 
+    var redirects = std.ArrayList(RedirectCommand).init(allocator);
+    defer redirects.deinit();
+
+    try redirects.appendSlice(commands);
+
     var packages = std.ArrayList(PackageId).init(allocator);
     defer packages.deinit();
 
-    try global_state.fetch_dependencies();
-    for (commands) |command| {
-        const package_id = try global_state.apply_redirect(command);
-        try packages.append(package_id);
+    // fetch dependencies, and apply redirects until everything has been fetched
+    while (0 < try global_state.fetch_dependencies()) {
+        var try_again = std.ArrayList(RedirectCommand).init(allocator);
+        defer try_again.deinit();
+
+        for (redirects.items) |redirect| {
+            if (try global_state.apply_redirect(redirect)) |package_id| {
+                try packages.append(package_id);
+            } else {
+                try try_again.append(redirect);
+            }
+        }
+
+        redirects.clearRetainingCapacity();
+        try redirects.appendSlice(try_again.items);
+        std.log.info("retrying {} redirects", .{try_again.items.len});
     }
+
+    if (redirects.items.len != 0) {
+        std.log.err("failed to fulfill all redirect commands", .{});
+        return error.FailedRedirects;
+    }
+
+    // TODO: print list of deduplications that are not redireted
 
     // TODO: determine why the zig compiler fails to connect when this is
     // uncommented. For now users need to make one edit in a redirected package
@@ -57,6 +82,44 @@ fn parents_are_all_root(entries: anytype) bool {
         if (entry.parent != .root)
             break false;
     } else true;
+}
+
+fn iterate_dep_paths(
+    allocator: Allocator,
+    graph: State.FlattenedDependencyGraph,
+    dep_paths: *std.ArrayList(DependencyPathEntry),
+) !void {
+    var new_dep_paths = std.ArrayList(DependencyPathEntry).init(allocator);
+    defer new_dep_paths.deinit();
+
+    for (dep_paths.items) |dep_path| {
+        defer allocator.free(dep_path.path);
+        if (dep_path.parent == .root) {
+            try new_dep_paths.append(.{
+                .path = try allocator.dupe(u8, dep_path.path),
+                .parent = .root,
+            });
+            continue;
+        }
+
+        for (graph.entries.items) |dependency| {
+            if (dependency.to != dep_path.parent)
+                continue;
+
+            const path = if (dependency.from == .root)
+                try std.fmt.allocPrint(allocator, "{s}{s}", .{ dependency.name, dep_path.path })
+            else
+                try std.fmt.allocPrint(allocator, ".{s}{s}", .{ dependency.name, dep_path.path });
+
+            try new_dep_paths.append(.{
+                .path = path,
+                .parent = dependency.from,
+            });
+        }
+    }
+
+    dep_paths.clearRetainingCapacity();
+    try dep_paths.appendSlice(new_dep_paths.items);
 }
 
 var gpa = std.heap.GeneralPurposeAllocator(.{
@@ -124,6 +187,35 @@ pub fn main() !void {
     if (global_state.packages.count() == 0) {
         std.log.err("no packages found!", .{});
         std.process.exit(1);
+    }
+
+    {
+        var graph = try global_state.create_flattenend_dependency_graph(gpa.allocator());
+        defer graph.deinit();
+
+        std.log.info("redirects:", .{});
+        for (global_state.redirects.keys(), global_state.redirects.values()) |package_id, path| {
+            var dep_paths = std.ArrayList(DependencyPathEntry).init(gpa.allocator());
+            defer {
+                for (dep_paths.items) |dep_path|
+                    gpa.allocator().free(dep_path.path);
+
+                dep_paths.deinit();
+            }
+
+            try dep_paths.append(.{
+                .path = try gpa.allocator().dupe(u8, ""),
+                .parent = package_id,
+            });
+
+            while (!parents_are_all_root(dep_paths.items))
+                try iterate_dep_paths(gpa.allocator(), graph, &dep_paths);
+
+            for (dep_paths.items) |entry|
+                std.log.info("  {s}", .{entry.path});
+
+            std.log.info("    => {s}", .{path});
+        }
     }
 
     if (global_state.redirects.count() == 0) {

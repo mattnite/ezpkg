@@ -139,11 +139,52 @@ fn create_package_id(state: *State) !PackageId {
     return @enumFromInt(state.package_count);
 }
 
+fn get_package_url_name(allocator: Allocator, url: []const u8) !?[]const u8 {
+    const uri = try std.Uri.parse(url);
+    return try std.mem.join(allocator, "", &.{
+        uri.host.?,
+        std.fs.path.dirnamePosix(uri.path) orelse return null,
+    });
+}
+
 fn get_or_create_package(state: *State, url: []const u8, hash: []const u8) !PackageId {
-    // deduplicate exact hash matches
-    for (state.packages.keys(), state.packages.values()) |other_id, other_info|
+    const package_identifier = try get_package_url_name(state.gpa, url);
+    defer if (package_identifier) |pi| state.gpa.free(pi);
+
+    // deduplicate exact hash matches and "close enough" matches
+    for (state.packages.keys(), state.packages.values()) |other_id, other_info| {
         if (std.mem.eql(u8, hash, other_info.hash))
             return other_id;
+
+        // ezpkg will deduplicate close enough packages for you because you
+        // shouldn't have multiple versions of a library in your dependency
+        // graph. I don't care if you think you have good reasons for this to
+        // be the case, since you like having multiples of things you can fork
+        // this tool and patch it to your liking.
+        //
+        // The deduplication will consider urls that look like:
+        //
+        // ```
+        // https://<package-identifier>/<variant>.tar.gz
+        // ```
+        //
+        // The package identifier for github will look like
+        // `github.com/user/repo/archive` and that `archive` at the end is
+        // fine.
+
+        const other_package_identifier = try get_package_url_name(state.gpa, other_info.url);
+        defer if (other_package_identifier) |pi| state.gpa.free(pi);
+
+        if (package_identifier != null and other_package_identifier != null) {
+            if (std.mem.eql(u8, package_identifier.?, other_package_identifier.?)) {
+                std.log.warn("DEDUPLICATING: detected differing versions of the same package:\n\n- {s}\n- {s}\n\ngoing to use the former for both nodes in the dependency graph\n", .{
+                    url,
+                    other_info.url,
+                });
+                return other_id;
+            }
+        }
+    }
 
     const package_id = try state.create_package_id();
 
@@ -276,20 +317,19 @@ pub fn add_archive(
     }
 }
 
-pub fn apply_redirect(state: *State, redirect: RedirectCommand) !PackageId {
+pub fn apply_redirect(state: *State, redirect: RedirectCommand) !?PackageId {
     var current_package: PackageId = .root;
     for (redirect.dependency.items) |name| {
         current_package = if (state.dependencies.get(current_package)) |deps|
             if (deps.entries.get(name)) |next_package|
                 next_package
             else {
-                // TODO: detailed error message
                 log.err("dependency not found: {s}", .{name});
-                return error.DependencyNotFound;
+                return null;
             }
         else {
             log.err("dependencies not found for {}", .{current_package});
-            return error.DependencyNotFound;
+            return null;
         };
     }
 
@@ -451,14 +491,16 @@ pub fn update_archive(state: *State, package_id: PackageId) !void {
     defer new_manifest.deinit();
 
     try state.incorporate_manifest(package_id, new_manifest, .updated);
-    try state.fetch_dependencies();
+    _ = try state.fetch_dependencies();
 
     // TODO: scenario where manifest is deleted
 }
 
-pub fn fetch_dependencies(state: *State) !void {
-    if (state.fetched.count() == state.packages.count())
-        return;
+/// returns number of fetched dependencies
+pub fn fetch_dependencies(state: *State) !usize {
+    const fetched_count = state.packages.count() - state.fetched.count();
+    if (fetched_count == 0)
+        return fetched_count;
 
     var global_cache = (try known_folders.open(state.gpa, .cache, .{})) orelse return error.NoCache;
     defer global_cache.close();
@@ -486,6 +528,8 @@ pub fn fetch_dependencies(state: *State) !void {
     }
 
     try state.calculate_ranks();
+    std.log.info("fetched {} deps", .{fetched_count});
+    return fetched_count;
 }
 
 fn fetch_dependency(
