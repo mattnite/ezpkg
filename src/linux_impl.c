@@ -70,7 +70,6 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
             if (event->mask & IN_CLOSE_WRITE || event->mask & IN_DELETE) {
                 for (size_t i = 0; i < num_paths; ++i) {
                     if (wd[i] == event->wd) {
-                        char buf[4096];
                         if(zig_add_path != 0) {
                             // each fd in wd corresponds to a package path
                             zig_add_path(paths[i]);
@@ -118,8 +117,8 @@ int LI_loop(int num_paths, unsigned char** paths) {
     }
 
     /* Mark directories for events
-       - file was opened
-       - file was closed */
+       - file was closed after writing
+       - file was deleted */
     for (i = 0; i < num_paths; i++) {
         wd[i] = inotify_add_watch(fd, paths[i], IN_CLOSE_WRITE | IN_DELETE);
         if (wd[i] == -1) {
@@ -135,7 +134,7 @@ int LI_loop(int num_paths, unsigned char** paths) {
 
     /* Wait for events */
     while (1) {
-        zig_clear_paths();
+        zig_clear_paths();   // new loop iter -> clear paths on zig side
         poll_num = poll(&poll_fd, nfds, -1);
         if (poll_num == -1) {
             if (errno == EINTR)

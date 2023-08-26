@@ -5,7 +5,6 @@ const State = @import("State.zig");
 const PackageId = State.PackageId;
 const os = std.os;
 
-// const C = @cImport(@cInclude("linux_impl.h"));
 const clear_cb_t = ?*const fn () callconv(.C) void;
 const handle_cb_t = ?*const fn () callconv(.C) void;
 const add_cb_t = ?*const fn ([*c]u8) callconv(.C) void;
@@ -91,7 +90,6 @@ pub fn update_packages_on_change(
 pub fn deinit() void {
     std.debug.print("\nLinux cleaning up inotify\n", .{});
     for (cleanup_paths.items) |p| {
-        // _ = p;
         _state.gpa.free(p);
     }
     cleanup_paths.deinit();
