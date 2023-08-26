@@ -5,13 +5,7 @@ const State = @import("State.zig");
 const PackageId = State.PackageId;
 const os = std.os;
 
-const clear_cb_t = ?*const fn () callconv(.C) void;
-const handle_cb_t = ?*const fn () callconv(.C) void;
-const add_cb_t = ?*const fn ([*c]u8) callconv(.C) void;
-
-pub extern fn LI_init(clear_cb_t, add_cb_t, handle_cb_t) void;
-pub extern fn LI_loop(c_int, paths: [*c][*c]u8) c_int;
-pub extern fn LI_errdefer_handler() void;
+const C = @import("linux_impl_c.zig");
 
 //
 // CALLBACKS from C
@@ -19,7 +13,7 @@ pub extern fn LI_errdefer_handler() void;
 var package_set: std.AutoArrayHashMap(PackageId, void) = undefined;
 
 // careful: path passed in below is temporary and will be reused
-pub fn add_path(path: [*c]u8) callconv(.C) void {
+pub fn add_path(path: [*c]u8) void {
     // brute force search through redirects should be fine
     const input_path = std.mem.span(path);
     for (_state.redirects.keys(), _state.redirects.values()) |package_id, package_path| {
@@ -48,11 +42,11 @@ pub fn add_path(path: [*c]u8) callconv(.C) void {
     }
 }
 
-pub fn clear_paths() callconv(.C) void {
+pub fn clear_paths() void {
     package_set.clearRetainingCapacity();
 }
 
-pub fn handle_paths() callconv(.C) void {
+pub fn handle_paths() void {
     @import("root").handle_package_change(_state, package_set.keys()) catch |err| {
         std.log.err("failed the package callback function: {}", .{err});
     };
@@ -66,7 +60,7 @@ pub fn update_packages_on_change(
     state: *State,
 ) !void {
     _state = state;
-    LI_init(clear_paths, add_path, handle_paths);
+    C.LI_init(clear_paths, add_path, handle_paths);
     package_set = std.AutoArrayHashMap(PackageId, void).init(state.gpa);
     defer package_set.deinit();
     cleanup_paths = std.ArrayList([:0]u8).init(state.gpa);
@@ -84,7 +78,7 @@ pub fn update_packages_on_change(
     }
     const num_paths: c_int = @intCast(state.redirects.values().len);
     const ptr: [*c][*c]u8 = @ptrCast(&all_paths_buf);
-    _ = LI_loop(num_paths, ptr);
+    try C.LI_loop(num_paths, ptr);
 }
 
 pub fn deinit() void {
@@ -94,5 +88,5 @@ pub fn deinit() void {
     }
     cleanup_paths.deinit();
     package_set.deinit();
-    LI_errdefer_handler();
+    C.LI_errdefer_handler();
 }

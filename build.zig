@@ -38,13 +38,8 @@ pub fn build(b: *std.Build) !void {
         exe.linkFramework("CoreServices");
 
     if (target.isLinux()) {
-        // required for #include "sys/inotify.h" in cImport to work
+        // required for inotify
         exe.linkLibC();
-        exe.addIncludePath(.{ .path = "src" });
-        var flags = std.ArrayList([]const u8).init(std.heap.page_allocator);
-        try flags.append("-ggdb");
-        defer flags.deinit();
-        exe.addCSourceFile(.{ .file = .{ .path = "src/linux_impl.c" }, .flags = flags.items });
     }
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
