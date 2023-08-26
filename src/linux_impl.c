@@ -13,7 +13,7 @@ zig_add_path_t zig_add_path = 0;
 zig_clear_paths_t zig_clear_paths = 0;
 zig_handle_paths_t zig_handle_paths = 0;
 
-// reggster the callbacks
+// register the callbacks
 void LI_init(zig_clear_paths_t clear_paths_cb, zig_add_path_t add_path_cb, zig_handle_paths_t zig_handle_paths_cb) {
     zig_add_path = add_path_cb;
     zig_clear_paths = clear_paths_cb;
@@ -63,27 +63,23 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
         /* Loop over all events in the buffer. */
         for (char *ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
             event = (const struct inotify_event *) ptr;
+
+            // fprintf(stderr, "Got event for %s\n", event->name);
+
             // we only care about changes to the filesystem
-            if (event->mask & IN_CLOSE_WRITE || event->mask & IN_ISDIR) {
+            if (event->mask & IN_CLOSE_WRITE || event->mask & IN_DELETE) {
                 for (size_t i = 0; i < num_paths; ++i) {
                     if (wd[i] == event->wd) {
                         char buf[4096];
-                        // sprintf(buf, "%s/%s", paths[i], event->name);
-                        // printf("    [C] adding path: %s\n", buf);
-
-
-                        // printf("    [C] adding path: %s\n", paths[i]);
                         if(zig_add_path != 0) {
-                            // zig_add_path(buf);
+                            // each fd in wd corresponds to a package path
                             zig_add_path(paths[i]);
                             have_new_stuff = 1;
                         }
                         break;
                     }
                 }
-            } // else {
-            //     printf("Wrong event for:  %s\n", event->name);
-            // }
+            } 
         }
     }
     if(have_new_stuff == 1) {
@@ -95,8 +91,8 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
 
 
 // global so we can errdefer
-int fd = -1;
-int *wd = 0;
+int fd = -1;   // inotify file descriptor
+int *wd = 0;   // inotify watch file descriptor array
 
 int LI_loop(int num_paths, unsigned char** paths) {
     int i, poll_num;
@@ -125,7 +121,7 @@ int LI_loop(int num_paths, unsigned char** paths) {
        - file was opened
        - file was closed */
     for (i = 0; i < num_paths; i++) {
-        wd[i] = inotify_add_watch(fd, paths[i], IN_OPEN | IN_CLOSE);
+        wd[i] = inotify_add_watch(fd, paths[i], IN_CLOSE_WRITE | IN_DELETE);
         if (wd[i] == -1) {
             fprintf(stderr, "Cannot watch '%s': %s\n", paths[i], strerror(errno));
             return E_INOTIFY_WATCH;
@@ -138,7 +134,6 @@ int LI_loop(int num_paths, unsigned char** paths) {
     poll_fd.events = POLLIN;
 
     /* Wait for events */
-    printf("Listening for events.\n");
     while (1) {
         zig_clear_paths();
         poll_num = poll(&poll_fd, nfds, -1);
@@ -165,7 +160,6 @@ int LI_loop(int num_paths, unsigned char** paths) {
     }
 
     // UNREACHABLE:
-    printf("Listening for events stopped.\n");
     close(fd);
     free(wd);
 }

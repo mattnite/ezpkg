@@ -38,12 +38,10 @@ pub fn add_path(path: [*c]u8) callconv(.C) void {
                 break false;
         } else if (lhs == null and rhs == null) true else false;
 
-        // std.debug.print("   trying {s} <--> {s}\n", .{ input_path, package_path });
         if (match) {
             package_set.put(package_id, {}) catch |err| {
                 std.log.err("failed the package callback function: {}", .{err});
             };
-            // std.debug.print("    -> {}:{s}\n", .{ package_id, package_path });
             break;
         }
     } else {
@@ -91,11 +89,12 @@ pub fn update_packages_on_change(
 }
 
 pub fn deinit() void {
-    std.debug.print("\nLinux cleaning up\n", .{});
+    std.debug.print("\nLinux cleaning up inotify\n", .{});
     for (cleanup_paths.items) |p| {
         // _ = p;
         _state.gpa.free(p);
     }
     cleanup_paths.deinit();
+    package_set.deinit();
     LI_errdefer_handler();
 }

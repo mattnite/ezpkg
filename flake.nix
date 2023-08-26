@@ -44,6 +44,7 @@
           nativeBuildInputs = with pkgs; [
             neovim-nightly-pkgs.neovim
             zigpkgs."0.11.0"
+            gf
           ];
 
           buildInputs = with pkgs; [
