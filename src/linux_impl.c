@@ -70,7 +70,9 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
                         char buf[4096];
                         // sprintf(buf, "%s/%s", paths[i], event->name);
                         // printf("    [C] adding path: %s\n", buf);
-                        printf("    [C] adding path: %s\n", paths[i]);
+
+
+                        // printf("    [C] adding path: %s\n", paths[i]);
                         if(zig_add_path != 0) {
                             // zig_add_path(buf);
                             zig_add_path(paths[i]);
@@ -86,6 +88,7 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
     }
     if(have_new_stuff == 1) {
         zig_handle_paths();
+        zig_clear_paths();
     }
     return HE_OK;
 }
