@@ -43,6 +43,7 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
     const struct inotify_event *event;
     ssize_t len;
 
+    unsigned char have_new_stuff = 0;
     /* Loop while events can be read from inotify file descriptor. */
     for (;;) {
 
@@ -63,25 +64,29 @@ static int handle_events(int fd, int *wd, int num_paths, char* paths[])
         for (char *ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
             event = (const struct inotify_event *) ptr;
             // we only care about changes to the filesystem
-            // if (event->mask & IN_CLOSE_WRITE) {
-                for (size_t i = 1; i < num_paths; ++i) {
+            if (event->mask & IN_CLOSE_WRITE || event->mask & IN_ISDIR) {
+                for (size_t i = 0; i < num_paths; ++i) {
                     if (wd[i] == event->wd) {
                         char buf[4096];
-                        sprintf(buf, "%s/%s", paths[i], event->name);
-                        printf("adding path in C: %s\n", buf);
+                        // sprintf(buf, "%s/%s", paths[i], event->name);
+                        // printf("    [C] adding path: %s\n", buf);
+                        printf("    [C] adding path: %s\n", paths[i]);
                         if(zig_add_path != 0) {
-                            
-                            zig_add_path(buf);
+                            // zig_add_path(buf);
+                            zig_add_path(paths[i]);
+                            have_new_stuff = 1;
                         }
                         break;
                     }
                 }
-            // } else {
+            } // else {
             //     printf("Wrong event for:  %s\n", event->name);
             // }
         }
     }
-    zig_handle_paths();
+    if(have_new_stuff == 1) {
+        zig_handle_paths();
+    }
     return HE_OK;
 }
 

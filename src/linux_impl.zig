@@ -18,12 +18,14 @@ pub extern fn LI_errdefer_handler() void;
 // CALLBACKS from C
 //
 var package_set: std.AutoArrayHashMap(PackageId, void) = undefined;
+
+// careful: path passed in below is temporary and will be reused
 pub fn add_path(path: [*c]u8) callconv(.C) void {
     // brute force search through redirects should be fine
-    std.debug.print("trying... {s}\n", .{path});
+    const input_path = std.mem.span(path);
     for (_state.redirects.keys(), _state.redirects.values()) |package_id, package_path| {
         // check if paths are semantically the same, there could be trailing /'s
-        var lhs_it = try fs.path.componentIterator(std.mem.span(path));
+        var lhs_it = try fs.path.componentIterator(input_path);
         var rhs_it = try fs.path.componentIterator(package_path);
 
         var lhs = lhs_it.next();
@@ -36,13 +38,16 @@ pub fn add_path(path: [*c]u8) callconv(.C) void {
                 break false;
         } else if (lhs == null and rhs == null) true else false;
 
+        std.debug.print("   trying {s} <--> {s}\n", .{ input_path, package_path });
         if (match) {
             package_set.put(package_id, {}) catch |err| {
                 std.log.err("failed the package callback function: {}", .{err});
             };
-            std.debug.print("-> {}:{s}\n", .{ package_id, package_path });
+            std.debug.print("    -> {}:{s}\n", .{ package_id, package_path });
             break;
         }
+    } else {
+        std.debug.print("    -> NO MATCH for {s}\n", .{input_path});
     }
 }
 
@@ -86,7 +91,7 @@ pub fn update_packages_on_change(
 }
 
 pub fn deinit() void {
-    std.debug.print("linux cleaning up\n", .{});
+    std.debug.print("\nLinux cleaning up\n", .{});
     for (cleanup_paths.items) |p| {
         // _ = p;
         _state.gpa.free(p);
