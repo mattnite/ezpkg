@@ -37,6 +37,14 @@ pub fn build(b: *std.Build) void {
     if (target.isDarwin())
         exe.linkFramework("CoreServices");
 
+    if (target.isLinux()) {
+        // required for #include "sys/inotify.h" in cImport to work
+        exe.linkLibC();
+        exe.addIncludePath(.{ .path = "src" });
+        var flags = std.ArrayList([]const u8).init(std.heap.page_allocator);
+        defer flags.deinit();
+        exe.addCSourceFile(.{ .file = .{ .path = "src/linux_impl.c" }, .flags = flags.items });
+    }
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

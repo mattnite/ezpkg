@@ -405,6 +405,7 @@ fn create_update_plan(state: State, package_ids: []const PackageId) !std.ArrayLi
 fn update_packages_on_change(state: *State) !void {
     switch (builtin.os.tag) {
         .macos => try @import("macos.zig").update_packages_on_change(state),
+        .linux => try @import("linux_impl.zig").update_packages_on_change(state),
         else => @compileError("unsupported OS"),
     }
 }
