@@ -12,6 +12,7 @@ const add_cb_t = ?*const fn ([*c]u8) callconv(.C) void;
 
 pub extern fn LI_init(clear_cb_t, add_cb_t, handle_cb_t) void;
 pub extern fn LI_loop(c_int, paths: [*c][*c]u8) c_int;
+pub extern fn LI_errdefer_handler() void;
 
 //
 // CALLBACKS from C
@@ -19,6 +20,7 @@ pub extern fn LI_loop(c_int, paths: [*c][*c]u8) c_int;
 var package_set: std.AutoArrayHashMap(PackageId, void) = undefined;
 pub fn add_path(path: [*c]u8) callconv(.C) void {
     // brute force search through redirects should be fine
+    std.debug.print("trying... {s}\n", .{path});
     for (_state.redirects.keys(), _state.redirects.values()) |package_id, package_path| {
         // check if paths are semantically the same, there could be trailing /'s
         var lhs_it = try fs.path.componentIterator(std.mem.span(path));
@@ -38,6 +40,7 @@ pub fn add_path(path: [*c]u8) callconv(.C) void {
             package_set.put(package_id, {}) catch |err| {
                 std.log.err("failed the package callback function: {}", .{err});
             };
+            std.debug.print("-> {}:{s}\n", .{ package_id, package_path });
             break;
         }
     }
@@ -55,6 +58,7 @@ pub fn handle_paths() callconv(.C) void {
 
 // man, what a hack :-)
 var _state: *State = undefined;
+var cleanup_paths: std.ArrayList([:0]u8) = undefined;
 
 pub fn update_packages_on_change(
     state: *State,
@@ -63,17 +67,30 @@ pub fn update_packages_on_change(
     LI_init(clear_paths, add_path, handle_paths);
     package_set = std.AutoArrayHashMap(PackageId, void).init(state.gpa);
     defer package_set.deinit();
+    cleanup_paths = std.ArrayList([:0]u8).init(state.gpa);
+    defer cleanup_paths.deinit();
 
     // super hacky no-alloc C-interop
     var all_paths_buf: [128][*c]const u8 = undefined;
     std.log.info("paths to watch:", .{});
     for (0.., state.redirects.values()) |index, path| {
-        const c_str_path = state.gpa.dupeZ(u8, path) catch unreachable;
+        const c_str_path = try state.gpa.dupeZ(u8, path);
+        try cleanup_paths.append(c_str_path);
+
         all_paths_buf[index] = c_str_path;
-        // all_paths_buf[index] = path.ptr;
         std.log.info(" - {s}\n", .{path});
     }
     const num_paths: c_int = @intCast(state.redirects.values().len);
     const ptr: [*c][*c]u8 = @ptrCast(&all_paths_buf);
     _ = LI_loop(num_paths, ptr);
+}
+
+pub fn deinit() void {
+    std.debug.print("linux cleaning up\n", .{});
+    for (cleanup_paths.items) |p| {
+        // _ = p;
+        _state.gpa.free(p);
+    }
+    cleanup_paths.deinit();
+    LI_errdefer_handler();
 }

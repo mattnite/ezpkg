@@ -254,8 +254,14 @@ pub fn main() !void {
 }
 
 fn cleanup_state(_: c_int) callconv(.C) void {
+    switch (builtin.os.tag) {
+        .linux => @import("linux_impl.zig").deinit(),
+        else => {},
+    }
+
     global_state.dump();
     global_state.deinit();
+
     _ = gpa.deinit();
     std.process.exit(1);
 }
