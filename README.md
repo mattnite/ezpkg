@@ -54,5 +54,5 @@ ezpkg:
 ## OS Support
 
 - [x] macos
-- [ ] linux
+- [x] linux
 - [ ] windows
