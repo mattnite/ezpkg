@@ -87,12 +87,16 @@ pub fn init(allocator: Allocator) !State {
 
 pub fn deinit(state: *State) void {
     restore: {
-        const file = std.fs.cwd().createFile("build.zig.zon", .{}) catch break :restore;
-        defer file.close();
+        // Use atomic file to prevent data loss when write_zon fails
+        var atomic_file = std.fs.cwd().atomicFile("build.zig.zon", .{}) catch break :restore;
+        defer atomic_file.deinit();
 
-        state.write_zon(.root, file.writer(), .{ .restore = true }) catch |err| {
+        state.write_zon(.root, atomic_file.file.writer(), .{ .restore = true }) catch |err| {
             log.warn("Failed to restore build.zig.zon of root: {}", .{err});
+            break :restore;
         };
+
+        atomic_file.finish() catch break :restore;
     }
 
     state.thread_pool.deinit();
@@ -312,6 +316,8 @@ pub fn add_archive(
     }
 
     try state.archives.putNoClobber(state.gpa, package_id, archive);
+    errdefer _ = state.archives.swapRemove(package_id);
+
     if (archive.files.get("build.zig.zon")) |entry| {
         try state.read_in_dependencies(package_id, entry.text);
     }
