@@ -39,7 +39,9 @@ pub fn from_text(allocator: Allocator, text: []const u8) !Manifest {
         dependencies.deinit();
     }
 
-    if (root.get("dependencies")) |dependencies_node| {
+    if (root.get("dependencies")) |dependencies_node| blk: {
+        if (dependencies_node == .empty)
+            break :blk;
         if (dependencies_node != .object)
             return error.DependenciesIsNotObject;
 
