@@ -569,7 +569,8 @@ fn fetch_dependency(
     const content_type = req.response.headers.getFirstValue("Content-Type") orelse return error.NoContentType;
     if (std.ascii.eqlIgnoreCase(content_type, "application/gzip") or
         std.ascii.eqlIgnoreCase(content_type, "application/x-gzip") or
-        std.ascii.eqlIgnoreCase(content_type, "application/tar+gzip"))
+        std.ascii.eqlIgnoreCase(content_type, "application/tar+gzip") or
+        std.ascii.eqlIgnoreCase(content_type, "application/octet-stream"))
     {
         const file = try ezpkg_cache.createFile(info.hash, .{});
         defer file.close();
